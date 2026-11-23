@@ -17,6 +17,23 @@ mkdir -p "$trabalho/extraido" "$usuario" "$raiz" "$montado" "$trabalho/ensaio" "
 ditto -x -k "$RUNNER_TEMP/kit.zip" "$trabalho/extraido"
 test "$(cat "$kit/version.txt")" = 0.8.1
 
+# O ZIP pode vir do Windows. Regrava as mesmas permissões no XML canônico do macOS
+# antes de o codesign entregá-las ao leitor AMFI do sistema.
+fase='normalização das permissões de assinatura'
+entitlements="$kit/native/entitlements.mac.plist"
+python3 - "$entitlements" "$trabalho/entitlements.plist" <<'PY'
+import plistlib, sys
+with open(sys.argv[1], 'rb') as original:
+    permissoes = plistlib.load(original)
+esperadas = {'com.apple.security.cs.allow-jit', 'com.apple.security.cs.allow-unsigned-executable-memory',
+             'com.apple.security.cs.disable-library-validation', 'com.apple.security.device.audio-input'}
+assert set(permissoes) == esperadas and all(v is True for v in permissoes.values())
+with open(sys.argv[2], 'wb') as canonico:
+    plistlib.dump(permissoes, canonico, fmt=plistlib.FMT_XML, sort_keys=False)
+PY
+plutil -lint "$trabalho/entitlements.plist"
+cp "$trabalho/entitlements.plist" "$entitlements"
+
 # O instalador compila o auxiliar nativo e valida o SHA-256 oficial do Electron.
 # Os logs da instalação privada nunca integram o disco ou a saída pública.
 fase='instalação'
