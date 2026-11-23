@@ -25,6 +25,17 @@ obter)
   gh api --header 'Accept: application/octet-stream' "$base/assets/$asset" > "$RUNNER_TEMP/kit.zip"
   test "$(shasum -a 256 "$RUNNER_TEMP/kit.zip" | awk '{print $1}')" = "$hash"
   ;;
+diagnostico)
+  case "$ARQUITETURA" in arm64|x86_64) ;; *) exit 1;; esac
+  [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+  arquivo="$RUNNER_TEMP/gzeroos-montagem.log"
+  test -f "$arquivo" && test ! -L "$arquivo"
+  nome="diagnostico-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ARQUITETURA.log"
+  rascunho "$origem" insumos-macos-0.8.1
+  curl --fail --silent --show-error --request POST --header "Authorization: Bearer $GH_TOKEN" --header 'Content-Type: text/plain' --data-binary "@$arquivo" \
+    "https://uploads.github.com/repos/$GH_REPO/releases/$origem/assets?name=$nome" | \
+    jq -e --arg nome "$nome" '.state == "uploaded" and .name == $nome' >/dev/null
+  ;;
 guardar)
   case "$ARQUITETURA/$DISCO" in arm64/GzeroOS-Mac-AppleSilicon.dmg|x86_64/GzeroOS-Mac-Intel.dmg) ;; *) exit 1;; esac
   arquivo="$RUNNER_TEMP/$DISCO"

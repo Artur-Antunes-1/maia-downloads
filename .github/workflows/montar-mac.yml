@@ -35,7 +35,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: bash montagem/rascunhos.sh obter
       - name: Montar o disco e verificar o aplicativo instalado
+        id: montagem
         run: bash montagem/montar-mac.sh
+      - name: Guardar diagnóstico restrito no rascunho de insumos
+        if: failure() && steps.montagem.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash montagem/rascunhos.sh diagnostico
       - name: Guardar apenas o disco verificado
         env:
           GH_TOKEN: ${{ github.token }}

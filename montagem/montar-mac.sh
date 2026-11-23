@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+registro="$RUNNER_TEMP/gzeroos-montagem.log"
+fase='preparação'
+exec 3>&1 > "$registro" 2>&1
+trap 'printf "Falha na fase %s (código %s).\n" "$fase" "$?" >&3' ERR
+
 test "$(uname -m)" = "$ARQUITETURA"
 trabalho=$(mktemp -d "$RUNNER_TEMP/gzeroos.XXXXXX")
 kit="$trabalho/extraido/GzeroOS-Mac-Kit"
@@ -14,10 +19,24 @@ test "$(cat "$kit/version.txt")" = 0.8.1
 
 # O instalador compila o auxiliar nativo e valida o SHA-256 oficial do Electron.
 # Os logs da instalação privada nunca integram o disco ou a saída pública.
-if ! env HOME="$usuario" "$kit/Instalar-GzeroOS.command" --sem-abrir > "$trabalho/instalar.log" 2>&1; then
-  echo 'Falha na instalação ou na assinatura do aplicativo.' >&2
-  exit 1
+fase='instalação'
+if env HOME="$usuario" /bin/bash "$kit/Instalar-GzeroOS.command" --sem-abrir; then
+  :
+else
+  codigo=$?
+  numero=$(awk '/^[1-5]\/5 /{n=substr($0,1,1)} END {print n+0}' "$registro")
+  case "$numero" in
+    1) fase='1/5 compilação ou autoteste nativo';;
+    2) fase='2/5 download ou integridade do Electron';;
+    3) fase='3/5 montagem do aplicativo';;
+    4) fase='4/5 assinatura e verificação';;
+    5) fase='5/5 cópia do aplicativo';;
+    *) fase='pré-requisitos da instalação';;
+  esac
+  printf 'Falha na fase %s (código %s).\n' "$fase" "$codigo" >&3
+  exit "$codigo"
 fi
+fase='preparação do conteúdo do disco'
 ditto "$usuario/Applications/GzeroOS.app" "$raiz/GzeroOS.app"
 ditto "$kit/Extensao-MAIA" "$raiz/Extensao-MAIA"
 ditto "$kit/Licencas" "$raiz/Licencas"
@@ -32,6 +51,7 @@ if test -s "$trabalho/reservados.txt"; then
   echo 'O disco contém um arquivo reservado à montagem.' >&2
   exit 1
 fi
+fase='criação e verificação do disco'
 hdiutil create -quiet -volname GzeroOS -format UDZO -fs HFS+ -srcfolder "$raiz" "$resultado"
 hdiutil verify -quiet "$resultado"
 hdiutil attach -readonly -nobrowse -mountpoint "$montado" "$resultado" >/dev/null
@@ -40,6 +60,7 @@ test "$(readlink "$montado/Applications")" = /Applications
 test -s "$montado/Extensao-MAIA/manifest.json"
 
 # Simula arrastar o app do disco para uma pasta gravável e depois abri-lo.
+fase='verificação da cópia, arquitetura e assinatura'
 app="$trabalho/aplicativos/GzeroOS.app"
 ditto "$montado/GzeroOS.app" "$app"
 plist="$app/Contents/Info.plist"
@@ -62,7 +83,9 @@ with open(sys.argv[2], encoding='utf-8') as f:
     assert json.load(f)['version'] == '0.8.1'
 PY
 
+fase='autoteste do auxiliar nativo'
 "$auxiliar" --self-test > "$trabalho/auxiliar.json"
+fase='inicialização do MCP'
 python3 - "$executavel" "$recursos/gzeroos-mcp.cjs" <<'PY'
 import json, os, subprocess, sys
 msgs = [
@@ -76,10 +99,9 @@ assert replies[1]['serverInfo']['name'] == 'gzeroos'
 assert {'buscar','ler_pagina'} <= {t['name'] for t in replies[2]['tools']}
 PY
 cd "$trabalho/ensaio"
+fase='preparação do teste de interface'
 npm install --ignore-scripts --no-save --no-audit --no-fund --loglevel=error playwright-core@1.63.0
 cp "$kit/Ensaio/verificar-ui.mjs" ./verificar-ui.mjs
-if ! env MAIA_EXECUTABLE="$executavel" node verificar-ui.mjs > "$trabalho/ui.log" 2>&1; then
-  echo 'O aplicativo instalado a partir do disco não passou pela verificação da interface.' >&2
-  exit 1
-fi
-printf 'Aplicativo, auxiliar, interface e MCP da versão 0.8.1 verificados no Mac %s.\n' "$ARQUITETURA"
+fase='teste de interface'
+env MAIA_EXECUTABLE="$executavel" node verificar-ui.mjs
+printf 'Aplicativo, auxiliar, interface e MCP da versão 0.8.1 verificados no Mac %s.\n' "$ARQUITETURA" >&3
