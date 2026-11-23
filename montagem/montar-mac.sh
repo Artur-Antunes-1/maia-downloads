@@ -118,7 +118,20 @@ PY
 cd "$trabalho/ensaio"
 fase='preparação do teste de interface'
 npm install --ignore-scripts --no-save --no-audit --no-fund --loglevel=error playwright-core@1.63.0
-cp "$kit/Ensaio/verificar-ui.mjs" ./verificar-ui.mjs
+xcrun swiftc "$GITHUB_WORKSPACE/montagem/cursor.swift" -o "$trabalho/cursor"
+cp "$GITHUB_WORKSPACE/montagem/cursor.mjs" ./cursor.mjs
+python3 - "$kit/Ensaio/verificar-ui.mjs" <<'PY'
+from pathlib import Path
+import sys
+qa = Path(sys.argv[1]).read_text(encoding='utf-8')
+entrada = "await page.locator('.pill-hit').hover()"
+alvo = "page.getByRole('button', { name: 'Abrir contexto atual', exact: true })"
+clique = f'await {alvo}.click()'
+assert qa.count(entrada) == 1 and qa.count(clique) == 1
+qa = qa.replace(entrada, "await alinharCursor(app, page, page.locator('.pill-hit'))")
+qa = qa.replace(clique, f'await alinharCursor(app, page, {alvo})\n  {clique}')
+Path('verificar-ui.mjs').write_text("import { alinharCursor } from './cursor.mjs'\n" + qa, encoding='utf-8')
+PY
 fase='teste de interface'
-env MAIA_EXECUTABLE="$executavel" node verificar-ui.mjs
+env MAIA_EXECUTABLE="$executavel" GZEROOS_CURSOR_ENSAIO="$trabalho/cursor" node verificar-ui.mjs
 printf 'Aplicativo, auxiliar, interface e MCP da versão 0.8.1 verificados no Mac %s.\n' "$ARQUITETURA" >&3
