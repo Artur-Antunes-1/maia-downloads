@@ -1,0 +1,42 @@
+name: Montar e verificar GZeroOS para Mac
+on:
+  push:
+    branches: [montagem/macos-0.8.1]
+
+permissions: {}
+
+jobs:
+  mac:
+    if: github.repository == 'Artur-Antunes-1/maia-downloads'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            nome: GzeroOS-Mac-AppleSilicon.dmg
+          - runner: macos-15-intel
+            arch: x86_64
+            nome: GzeroOS-Mac-Intel.dmg
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    env:
+      ARQUITETURA: ${{ matrix.arch }}
+      DISCO: ${{ matrix.nome }}
+      GH_REPO: Artur-Antunes-1/maia-downloads
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Conferir e obter a entrada da montagem
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash montagem/rascunhos.sh obter
+      - name: Montar o disco e verificar o aplicativo instalado
+        run: bash montagem/montar-mac.sh
+      - name: Guardar apenas o disco verificado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash montagem/rascunhos.sh guardar
